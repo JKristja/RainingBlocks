@@ -2,17 +2,24 @@ package main.model;
 
 import java.awt.*;
 import java.awt.event.KeyEvent;
-import java.util.List;
-import java.util.*;
+import java.util.Observable;
+import java.util.Random;
 
 /**
- * represents the puzzle game
+ * represents the puzzle game; contains board and one active piece
  */
 public class PuzzleGame extends Observable {
     private final int X0_NEW_PIECE;
     private static final int Y0_NEW_PIECE = 0;
     private int level;
     private int score;
+    private int topScore;
+    private int clearedRows;
+    private static final int SCORE_PER_ROW = 50;
+    private static final int ROWS_PER_LEVEL = 12;
+    private static final double ROW_SCORE_MULT = 0.15;
+    private static final double LEVEL_SCORE_MULT = 0.1;
+    private static final int DEFAULT_SCORE = 2000;
     private PuzzleBoard board;
     private final int GRID_WIDTH;
     private final int GRID_HEIGHT;
@@ -20,32 +27,76 @@ public class PuzzleGame extends Observable {
     private PuzzlePiece currentPiece;
     private Random random;
 
-    public PuzzleGame(int gridWidth, int gridHeight, Color background) {
-        this.level = 0;
-        this.score = 0;
+    public PuzzleGame(int gridWidth, int gridHeight, Color background, Random random) {
+        initScore();
         this.X0_NEW_PIECE = gridWidth / 2 - 1;
         this.GRID_WIDTH = gridWidth;
         this.GRID_HEIGHT = gridHeight;
         this.BACKGROUND = background;
         this.board = new PuzzleBoard(gridWidth, gridHeight, background);
-        this.random = new Random();
+        this.random = random;
         this.currentPiece = randomPiece();
+    }
+
+    /**
+     * MODIFIES: this
+     * Initializes level and score
+     */
+    private void initScore() {
+        this.level = 1;
+        this.score = 0;
+        this.topScore = DEFAULT_SCORE;
+        this.clearedRows = 0;
     }
 
     public int getLevel() {
         return this.level;
     }
 
+    public int getScore() {
+        return this.score;
+    }
+
+    public int getTopScore() {
+        return this.topScore;
+    }
+
+    public int getClearedRows() {
+        return this.clearedRows;
+    }
+
     /**
-     * MDIFIES: this
+     * MODIFIES: this
+     * Updates TopScore if current Score is higher
+     */
+    public void setTopScore() {
+        this.topScore = Math.max(this.score, this.topScore);
+        this.setChanged();
+        this.notifyObservers("TopScore");
+    }
+
+    /**
+     * MODIFIES: this
+     * Resets all board rows to BACKGROUND; resets score and level
+     */
+    public void resetGame() {
+        this.board.setBlankBoard();
+        this.score = 0;
+        this.level = 1;
+        this.clearedRows = 0;
+        this.setChanged();
+        notifyObservers("Score");
+    }
+
+    /**
+     * MODIFIES: this
      * generate new random piece as current piece
      *
      * @return current puzzle piece
      */
     private PuzzlePiece randomPiece() {
-        List<PuzzlePiece.PIECES> pieces = Arrays.asList(PuzzlePiece.PIECES.values());
-        int numTypes = pieces.size();
-        PuzzlePiece.PIECES piece = pieces.get(random.nextInt(numTypes));
+        int numTypes = PuzzlePiece.PIECES.values().length;
+        PuzzlePiece.PIECES piece = PuzzlePiece.PIECES.values()[random.nextInt(numTypes)];
         switch (piece) {
             case J:
                 return new JPiece(X0_NEW_PIECE, Y0_NEW_PIECE);
@@ -73,57 +124,82 @@ public class PuzzleGame extends Observable {
         return this.currentPiece;
     }
 
+    public void setCurrentPiece(PuzzlePiece puzzlePiece) {
+        this.currentPiece = puzzlePiece;
+    }
+
     /**
      * MODIFIES: this
-     * Advances PuzzleGame one step and checks for contact with bottom or other blocks;
-     * updates board state;
+     * Advances puzzle piece one unit down if able; Sets piece in place and generates new piece at top otherwise.
      */
     public void nextState() {
         if (isClearBelow(1)) {
-            currentPiece.moveDown();
+            this.currentPiece.moveDown();
+            this.setChanged();
+            this.notifyObservers();
         } else {
             placePiece();
             nextPiece();
+            this.setChanged();
+            this.notifyObservers("Score");
         }
     }
 
     /**
      * MODIFIES: this
-     * sets piece into background, checks if any rows completed, and clears rows in sequential order from top
-     * notifies observers that rows are being cleared
+     * sets piece on board; checks if any rows completed; clears completed rows in sequential order from top
+     * Updates Score for cleared rows;
      */
-    private void placePiece() {
+    public void placePiece() {
         int x = currentPiece.getX0();
         int y = currentPiece.getY0();
-        ArrayList<Integer> completeRows = new ArrayList<Integer>();
+        int yMax = currentPiece.getY1();
+        int rowsCleared = 0;
         for (Integer[] xy : currentPiece.getVertices()) {
             board.setPos(x + xy[0], y + xy[1], currentPiece.color);
-            if (board.isRowComplete(y + xy[1]) && !completeRows.contains(y + xy[1])) {
-                completeRows.add(y + xy[1]);
+        }
+        for (int row = y; row <= yMax; row++) {
+            if (board.isRowComplete(row)) {
+                board.clearRow(row);
+                rowsCleared++;
             }
         }
-        if (completeRows.size() > 0) {
-            for (int rowIndex : completeRows) {
-                board.clearRow(rowIndex);
-            }
-            this.hasChanged();
-            this.notifyObservers();
+        updateScore(rowsCleared);
+    }
+
+    /**
+     * Updates score with additional points for rows cleared;
+     * Checks if next level reached; resets clearedRows counter if new level.
+     *
+     * @param rowsCleared number of rows cleared to be scored
+     */
+    public void updateScore(int rowsCleared) {
+        score += (SCORE_PER_ROW * rowsCleared
+                * (1 + (rowsCleared - 1) * ROW_SCORE_MULT + (level - 1) * LEVEL_SCORE_MULT));
+
+        clearedRows += rowsCleared;
+        if (clearedRows > ROWS_PER_LEVEL) {
+            level++;
+            clearedRows = 0;
         }
     }
 
     /**
      * MODIFIES: this
-     * generates new piece at top of screen
+     * generates new random piece
      */
     private void nextPiece() {
         this.currentPiece = randomPiece();
     }
 
     /**
-     * @return true if game is over (no clear space below)
+     * @return true if game is over (new piece with no clear space below)
      */
     public boolean isGameOver() {
-        return !isClearBelow(1);
+        if (this.currentPiece.getX0() == X0_NEW_PIECE && this.currentPiece.getY0() == Y0_NEW_PIECE) {
+            return !isClearBelow(1);
+        }
+        return false;
     }
 
     /**
@@ -137,25 +213,28 @@ public class PuzzleGame extends Observable {
             currentPiece.moveLeft();
         } else if (keyCode == KeyEvent.VK_RIGHT && isClearRight()) {
             currentPiece.moveRight();
-        } else if (keyCode == KeyEvent.VK_DOWN && isClearBelow(1)) {
-            currentPiece.moveDown();
+        } else if (keyCode == KeyEvent.VK_DOWN) {
+            nextState();
         } else if (keyCode == KeyEvent.VK_A && isClearCounterCW()) {
             currentPiece.rotateCounterCW();
         } else if (keyCode == KeyEvent.VK_D && isClearCW()) {
             currentPiece.rotateCW();
         } else if (keyCode == KeyEvent.VK_SPACE) {
             currentPiece.dropPiece(getDistToBottom());
+            nextState();
         }
+        this.setChanged();
+        notifyObservers();
     }
 
     /**
      * @return true if current piece can move one grid space down (space is not occupied)
      */
-    private boolean isClearBelow(int row) {
+    public boolean isClearBelow(int row) {
         int nextX = currentPiece.getX0();
         int nextY = currentPiece.getY0() + row;
 
-        if (currentPiece.getY1() < GRID_HEIGHT) {
+        if (currentPiece.getY1() + row < GRID_HEIGHT) {
             for (Integer[] xy : currentPiece.getVertices()) {
                 if (board.getPos(nextX + xy[0], nextY + xy[1]) != BACKGROUND) {
                     return false;
@@ -193,7 +272,7 @@ public class PuzzleGame extends Observable {
         int nextX = currentPiece.getX0() + 1;
         int nextY = currentPiece.getY0();
 
-        if (currentPiece.getX1() < GRID_WIDTH) {
+        if (currentPiece.getX1() + 1 < GRID_WIDTH) {
             for (Integer[] xy : currentPiece.getVertices()) {
                 if (board.getPos(nextX + xy[0], nextY + xy[1]) != BACKGROUND) {
                     return false;
@@ -213,7 +292,7 @@ public class PuzzleGame extends Observable {
         int nextY = currentPiece.getY0();
         this.currentPiece.rotateCounterCW();
 
-        if (currentPiece.getX1() <= GRID_WIDTH && currentPiece.getY1() <= GRID_HEIGHT) {
+        if (currentPiece.getX1() < GRID_WIDTH && currentPiece.getY1() < GRID_HEIGHT) {
             for (Integer[] xy : currentPiece.getVertices()) {
                 if (board.getPos(nextX + xy[0], nextY + xy[1]) != BACKGROUND) {
                     this.currentPiece.rotateCW();
@@ -236,7 +315,7 @@ public class PuzzleGame extends Observable {
         int nextY = currentPiece.getY0();
         this.currentPiece.rotateCW();
 
-        if (currentPiece.getX1() <= GRID_WIDTH && currentPiece.getY1() <= GRID_HEIGHT) {
+        if (currentPiece.getX1() < GRID_WIDTH && currentPiece.getY1() < GRID_HEIGHT) {
             for (Integer[] xy : currentPiece.getVertices()) {
                 if (board.getPos(nextX + xy[0], nextY + xy[1]) != BACKGROUND) {
                     this.currentPiece.rotateCounterCW();
@@ -255,10 +334,10 @@ public class PuzzleGame extends Observable {
      * @return clear distance that current piece can travel down
      */
     public int getDistToBottom() {
-        int y_dist = 0;
+        int y_dist = 1;
         while (isClearBelow(y_dist)) {
             y_dist++;
         }
-        return y_dist;
+        return y_dist - 1;
     }
 }

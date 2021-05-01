@@ -13,9 +13,8 @@ public abstract class PuzzlePiece {
     private int y0;
     private int x1;
     private int y1;
-    private ArrayList<Integer[]> shape;
-    protected ArrayList<ArrayList<Integer[]>> rotationMap;
-    protected Random rand;
+    protected ArrayList<ArrayList<Integer[]>> rotationMap = new ArrayList<>();
+    protected static final Random RANDOM = new Random();
     protected int currentRotation;
     protected Color color;
 
@@ -24,9 +23,7 @@ public abstract class PuzzlePiece {
     public PuzzlePiece(int x0, int y0) {
         this.x0 = x0;
         this.y0 = y0;
-        setColor();
-        this.rotationMap = new ArrayList<>();
-        this.rand = new Random();
+        this.setColor();
     }
 
     /**
@@ -41,14 +38,18 @@ public abstract class PuzzlePiece {
             throw new InvalidParameterException("xyPairs expects even length parameter list > 0");
         }
 
-        this.shape = new ArrayList<>();
+        ArrayList<Integer[]> shape = new ArrayList<>();
         for (int i = 0; i < xyPairs.length; i += 2) {
-            this.shape.add(i / 2 + 1, new Integer[]{i, i + 1});
+            shape.add(new Integer[]{xyPairs[i], xyPairs[i + 1]});
         }
-        return this.shape;
+        return shape;
     }
 
-    abstract void setColor();
+    /**
+     * MODIFIES: this
+     * Color of Puzzle Piece
+     */
+    protected abstract void setColor();
 
     public Color getColor() {
         return this.color;
@@ -71,7 +72,28 @@ public abstract class PuzzlePiece {
     }
 
     /**
-     * sets x1,y1 values for puzzle piece for current rotation
+     * MODIFIES: this
+     * Sets current rotation index of piece; updates X1,Y1 accordingly.
+     *
+     * @param rotationIndex index corresponding
+     * @throws IndexOutOfBoundsException if rotationIndex < 0 || rotationIndex >= rotationMap.size()
+     */
+    public void setCurrentRotation(int rotationIndex) throws IndexOutOfBoundsException {
+        if (rotationIndex < 0 || rotationIndex >= this.rotationMap.size()) {
+            throw new IndexOutOfBoundsException("Invalid Rotation Index");
+        }
+        this.currentRotation = rotationIndex;
+        setX1Y1();
+    }
+
+    public int getCurrentRotation() {
+        return this.currentRotation;
+    }
+
+    /**
+     * MODIFIES: this
+     * sets x1,y1 values for puzzle piece for current rotation;
+     * x1,y1 are relative to current x0,y0
      */
     protected void setX1Y1() {
         this.x1 = 0;
@@ -91,43 +113,67 @@ public abstract class PuzzlePiece {
         return rotationMap.get(currentRotation);
     }
 
+    /**
+     * MODIFIES: this
+     * Moves piece one unit left; updates X1,Y1
+     */
     public void moveLeft() {
         this.x0 -= 1;
+        setX1Y1();
     }
 
+    /**
+     * MODIFIES: this
+     * Moves piece one unit right; updates X1,Y1
+     */
     public void moveRight() {
         this.x0 += 1;
+        setX1Y1();
     }
 
+    /**
+     * MODIFIES: this
+     * Moves piece one unit down; updates X1,Y1
+     */
     public void moveDown() {
         this.y0 += 1;
-    }
-
-    public void dropPiece(int yToFixedPiece) {
-        this.y0 += yToFixedPiece;
+        setX1Y1();
     }
 
     /**
      * MODIFIES: this
-     * Rotates puzzle piece counter clockwise by changing vertex order and position
+     * Drops piece dropDistance units down; updates X1, Y1
+     *
+     * @param dropDistance number of units to drop piece
+     */
+    public void dropPiece(int dropDistance) {
+        this.y0 += dropDistance;
+        setX1Y1();
+    }
+
+    /**
+     * MODIFIES: this
+     * Rotates puzzle piece counter clockwise by changing vertex order and position; updates X1,Y1
      */
     public void rotateCounterCW() {
-        if (currentRotation == 0) {
-            currentRotation = rotationMap.size();
+        if (this.currentRotation == 0) {
+            this.currentRotation = this.rotationMap.size() - 1;
         } else {
-            currentRotation -= 1;
+            this.currentRotation -= 1;
         }
+        setX1Y1();
     }
 
     /**
      * MODIFIES: this
-     * Rotates puzzle piece clockwise by changing vertex order and position
+     * Rotates puzzle piece clockwise by changing vertex order and position; updates X1,Y1
      */
     public void rotateCW() {
-        if (currentRotation == rotationMap.size()) {
-            currentRotation = 0;
+        if (this.currentRotation == this.rotationMap.size() - 1) {
+            this.currentRotation = 0;
         } else {
-            currentRotation += 1;
+            this.currentRotation += 1;
         }
+        setX1Y1();
     }
 }
